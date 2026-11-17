@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow">
+<!--
+  LMS PMTC - halaman pembuka (paket v8)
+
+  Untuk apa: alamat web app Apps Script (…/exec) gagal dibuka di browser yang sedang login lebih dari satu akun Google.
+  Halaman kecil ini dipasang di luar Apps Script. Ia mengambil isi aplikasi dan semua datanya dari web app lewat
+  fetch TANPA cookie Google, sehingga Google selalu melihat pengunjung tanpa akun dan masalah banyak akun tidak muncul.
+
+  Yang ada di file ini hanya alamat web app (yang memang sudah tertulis di setiap QR). Tidak ada data peserta, sandi, atau kunci.
+  Semua data tetap di Google Sheets; login tetap diperiksa server.
+
+  Cara pasang: isi URL_WEB_APP di bawah, lalu unggah file ini (bernama index.html) ke tempat hosting halaman statis.
+  Setelah itu file ini tidak perlu diubah lagi: pembaruan aplikasi cukup lewat Apps Script seperti biasa.
+-->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com data: blob:; img-src data: blob: https:; connect-src https://script.google.com https://script.googleusercontent.com https://*.googleusercontent.com; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'">
+<title>LMS PMTC</title>
+<style>
+  html, body { height: 100%; margin: 0; }
+  body { font: 16px/1.5 "Segoe UI", system-ui, sans-serif; color: #0C2318; background: #F2F6F9; display: flex; flex-direction: column; }
+  .pita { height: 6px; flex: none; background: linear-gradient(115deg, #006CB8 0 60%, #fff 60% 60.4%, #ACC42A 60.4% 80%, #fff 80% 80.4%, #ED1B2F 80.4% 100%); }
+  main { flex: 1; display: grid; place-items: center; padding: 24px; text-align: center; }
+  p { margin: 0 0 14px; max-width: 30em; }
+  button { font: inherit; font-weight: 600; padding: 9px 18px; border-radius: 8px; border: 1px solid #006CB8; background: #006CB8; color: #fff; cursor: pointer; }
+  button[hidden] { display: none; }
+</style>
+</head>
+<body>
+<div class="pita"></div>
+<main><div><p id="pesan">Memuat LMS PMTC…</p><button id="ulang" hidden>Coba lagi</button></div></main>
+<script>
+(function () {
+  'use strict';
+
+  // ===== SATU-SATUNYA YANG PERLU DIISI =====
+  // URL web app Apps Script, berakhiran /exec (Deploy > Manage deployments > Web app > URL).
+  var URL_WEB_APP = 'https://script.google.com/macros/s/AKfycbxEPRj2_KdHyONulBYfesSokUxQBFGNcTv0hfXSPx90UPqoShzEYcQU6Y1YQId8dPrzpg/exec';
+  // =========================================
+
+  var pesan = document.getElementById('pesan'), ulang = document.getElementById('ulang');
+  function gagal(teks, bisaUlang) { pesan.textContent = teks; ulang.hidden = !bisaUlang; }
+
+  // Tidak boleh ditampilkan di dalam bingkai halaman lain (mencegah klik yang dijebak).
+  if (window.top !== window.self) { gagal('Halaman ini tidak bisa dibuka di dalam bingkai halaman lain. Buka alamatnya langsung di browser.'); return; }
+  if (!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(URL_WEB_APP)) {
+    gagal('Halaman pembuka belum diatur: URL web app belum diisi. Hubungi admin LMS.');
+    return;
+  }
+
+  function muat() {
+    ulang.hidden = true; pesan.textContent = 'Memuat LMS PMTC…';
+    var batch = '';
+    try { batch = new URLSearchParams(location.search).get('batch') || ''; } catch (e) { batch = ''; }
+    // credentials 'omit': cookie Google tidak dikirim. Inilah yang membuat halaman ini kebal terhadap masalah banyak akun.
+    fetch(URL_WEB_APP + '?mode=halaman' + (batch ? '&batch=' + encodeURIComponent(batch) : ''), { method: 'GET', credentials: 'omit', redirect: 'follow', cache: 'no-store', referrerPolicy: 'no-referrer' })
+      .then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.text().then(function (s) {
+          try { return JSON.parse(s); }
+          catch (e) { throw new Error('server masih memakai Kode.gs versi lama. Tempel Kode.gs v8, lalu Kelola deployment > Edit > Versi baru'); }
+        });
+      })
+      .then(function (r) {
+        if (!r || !r.ok || typeof r.html !== 'string') throw new Error('jawaban server tidak dikenali');
+        if (r.html.indexOf('window.LMS_API_URL') < 0 || r.html.indexOf('<head>') < 0) {
+          var v = /LMS PMTC — Index[^\n]*?(v\d[\d.]*)/.exec(r.html);
+          throw new Error('Kode.gs sudah versi ' + (r.versi || '8') + ', tetapi file Index yang tayang ' + (v ? 'masih ' + v[1] : 'bukan versi 8') +
+            ' (ukuran ' + Math.round(r.html.length / 1024) + ' KB). Pastikan hanya ada satu file HTML bernama Index, lalu Kelola deployment > Edit > Versi baru');
+        }
+        // Isi aplikasi diberi tahu alamat server, lalu ditulis ke halaman ini.
+        var html = r.html.replace('<head>', function () { return '<head><script>window.LMS_API_URL=' + JSON.stringify(URL_WEB_APP) + ';<\/script>'; });
+        document.open(); document.write(html); document.close();
+      })
+      .catch(function (e) { gagal(/versi|Index/.test(e && e.message || '') ? 'Pemasangan belum lengkap: ' + e.message + '.' : 'LMS belum bisa dimuat. Periksa koneksi internet, lalu coba lagi. (' + (e && e.message ? e.message : e) + ')', true); });
+  }
+  ulang.addEventListener('click', muat);
+  muat();
+})();
+</script>
+</body>
+</html>
